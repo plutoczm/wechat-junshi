@@ -1,0 +1,48 @@
+# ===== 私密数据：绝对不要提交 =====
+# 对话档案（含真实聊天记录）—— 用 data/** 递归匹配，
+# 注意不能用 "data/" 再配 "!data/.gitkeep"：那样 git 会进入目录，
+# 而 "data/" 只匹配目录本身，里面的文件反而会被提交。
+data/**
+!data/.gitkeep
+
+# 运行日志（含微信号、昵称、聊天内容）
+logs/
+*.log
+
+# 本地配置：含你自己的好友名单/备注名
+config.json
+config.test.json
+
+# 兜底
+*.jsonl
+.env
+.env.*
+credentials*.yaml
+*.sqlite3
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ===== 项目 =====
+# 微信安装包等大文件
+downloads/
+dist/
+build/
+
+# wxauto4 自己产生的日志
+wxauto_logs/
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

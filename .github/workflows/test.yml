@@ -1,0 +1,64 @@
+name: 测试
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 设置 Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 语法检查（全部文件）
+        run: |
+          python -m compileall -q bot.py junshi.py archive.py smoke_test.py test_parse.py
+          echo "编译通过"
+
+      - name: 输出解析与校验单元测试
+        # 只依赖标准库，可在 Linux 上跑
+        run: python test_parse.py
+
+      - name: 确认单元测试覆盖了关键拦截逻辑
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, ".")
+          from junshi import parse_model_output, needs_no_reply, clean_reply
+
+          # 能正常解析
+          msgs, ok = parse_model_output('{"messages": ["在忙吗？"], "skip": false}', 800)
+          assert ok and msgs == ["在忙吗？"], msgs
+
+          # skip 解析为空
+          msgs, ok = parse_model_output('{"messages": [], "skip": true}', 800)
+          assert ok and msgs == [], msgs
+
+          # 顾问口吻必须被拦掉
+          for bad in [
+              '{"messages": ["发个轻的就行，别追问："], "skip": false}',
+              '{"messages": ["单看这一件事——不算。"], "skip": false}',
+          ]:
+              msgs, ok = parse_model_output(bad, 800)
+              assert msgs == [], f"没有拦掉顾问口吻: {bad} -> {msgs}"
+
+          # 无信息量消息判定
+          for t in ["嗯", "哦", "好的", "。。。", "666", "ok"]:
+              assert needs_no_reply(t), f"{t} 应判为无需回复"
+          for t in ["在吗", "她三天没回我消息了", "我们算在一起了吗"]:
+              assert not needs_no_reply(t), f"{t} 不该判为无需回复"
+
+          print("核心拦截逻辑全部通过")
+          PY

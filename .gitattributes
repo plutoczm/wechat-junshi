@@ -1,0 +1,15 @@
+# 统一换行符，避免跨平台差异
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF，且保持纯 ASCII（cmd.exe 按 GBK 读 .bat）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 军师对话档案：本地数据，永远不要进版本库
+*.jsonl -text
+
+# 二进制
+*.exe binary
+*.png binary
+*.jpg binary
+*.zip binary
