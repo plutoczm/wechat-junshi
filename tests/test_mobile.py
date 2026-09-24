@@ -181,7 +181,7 @@ def test_conflicts_and_digest_are_atomic(setup):
 
 
 @pytest.mark.parametrize("fields", [
-    {"role": "assistant"}, {"kind": "image"}, {"occurred_at": "2026-09-24"},
+    {"role": "assistant"}, {"kind": "unknown"}, {"occurred_at": "2026-09-24"},
     {"occurred_at": 42}, {"id": 0}, {"extra": True}, {"content": ""}, {"content": "x\x00y"},
 ])
 def test_import_rejects_invalid_data(setup, fields):
