@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urljoin
 
 import httpx
@@ -80,8 +81,16 @@ class Trends:
             self._last_error = f"{source}:unavailable"
             return cached[1] if cached else []
 
+    def refresh(self):
+        """Refresh public lists in parallel. No private query is accepted or transmitted."""
+        if not self.enabled:
+            return {"sources": 0, "items": 0}
+        with ThreadPoolExecutor(max_workers=min(4, len(self.sources) or 1)) as pool:
+            batches = list(pool.map(self._fetch, self.sources))
+        return {"sources": len(self.sources), "items": sum(len(x) for x in batches)}
+
     def search(self, private_query, limit=8):
-        """Local relevance match. private_query is never sent to the trend provider."""
+        """Match ONLY already-cached public titles locally; never blocks reply generation."""
         if not self.enabled:
             return []
         qterms = set(terms(private_query))
@@ -89,12 +98,16 @@ class Trends:
             return []
         scored = []
         with self._lock:
-            for source in self.sources:
-                for item in self._fetch(source):
-                    tterms = set(terms(item["title"]))
-                    overlap = len(qterms & tterms)
-                    if overlap:
-                        scored.append((overlap, item))
+            snapshot = {
+                source: list(self._cache.get(source, (0, []))[1])
+                for source in self.sources
+            }
+        for source, items in snapshot.items():
+            for item in items:
+                tterms = set(terms(item["title"]))
+                overlap = len(qterms & tterms)
+                if overlap:
+                    scored.append((overlap, item))
         scored.sort(key=lambda x: (-x[0], x[1]["source"], x[1]["title"]))
         seen, out = set(), []
         for score, item in scored:
