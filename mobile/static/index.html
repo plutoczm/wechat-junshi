@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer"><meta name="theme-color" content="#163f39">
+<title>WeChat Junshi</title><link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header><span class="eyebrow">WECHAT JUNSHI / MOBILE</span><h1 data-i18n="title"></h1><p data-i18n="subtitle"></p></header>
+<main>
+<section id="login"><h2 data-i18n="unlock"></h2><p data-i18n="loginNote"></p>
+<label for="token" data-i18n="token"></label><input id="token" type="password" autocomplete="off" spellcheck="false">
+<button id="connect" data-i18n="connect"></button></section>
+<p id="notice" role="status" aria-live="polite"></p>
+<div id="workspace" hidden>
+<section class="banner"><strong data-i18n="capability"></strong><p data-i18n="capabilityNote"></p><small id="keyStatus"></small>
+<button class="secondary" id="logout" data-i18n="lock"></button></section>
+<div class="grid">
+<section><h2 data-i18n="people"></h2><div id="people"></div>
+<details><summary data-i18n="addPerson"></summary><label for="personName" data-i18n="personName"></label>
+<input id="personName" maxlength="80"><button id="newPerson" data-i18n="create"></button></details>
+<details><summary data-i18n="group"></summary><p data-i18n="groupNote"></p><div id="groupChoices"></div>
+<label for="groupTarget" data-i18n="groupTarget"></label><select id="groupTarget"></select><button id="move" data-i18n="move"></button></details>
+</section>
+<section id="accountPanel" hidden><h2 id="accountHeading"></h2><p id="accountMeta"></p>
+<label><input id="cloud" type="checkbox"><span data-i18n="cloud"></span></label>
+<p class="muted" data-i18n="cloudNote"></p><button id="saveConsent" class="secondary" data-i18n="saveConsent"></button>
+<label for="mode" data-i18n="mode"></label><select id="mode"><option value="C" data-i18n="modeC"></option><option disabled data-i18n="modeB"></option></select>
+<div class="divider"></div><h3 data-i18n="reply"></h3><label for="incoming" data-i18n="incoming"></label>
+<textarea id="incoming" maxlength="4000" rows="4"></textarea><button id="generate" data-i18n="generate"></button>
+<p class="muted" data-i18n="draftNote"></p>
+<div id="draftPanel" hidden><label for="draftText" data-i18n="draftText"></label><textarea id="draftText" rows="5"></textarea>
+<p id="explanation"></p><p id="evidence"></p><button id="copy" data-i18n="copy"></button>
+<button id="sent" class="secondary" data-i18n="sent"></button><button id="discard" class="secondary" data-i18n="discard"></button></div>
+</section>
+</div>
+<section id="memoryPanel" hidden><h2 data-i18n="memory"></h2>
+<label for="search" data-i18n="search"></label><input id="search" maxlength="4000"><button id="searchBtn" class="secondary" data-i18n="searchBtn"></button>
+<p class="muted" data-i18n="searchNote"></p><div id="records"></div>
+<details><summary data-i18n="notes"></summary><p data-i18n="notesNote"></p><textarea id="note" maxlength="1000" rows="3" aria-label="Memory note"></textarea>
+<button id="addNote" data-i18n="addNote"></button><div id="notes"></div></details>
+<details><summary data-i18n="import"></summary><p data-i18n="importNote"></p>
+<input id="importFile" type="file" accept=".jsonl,.json" aria-label="Import file"><textarea id="importText" rows="5" spellcheck="false" aria-label="Import JSONL" placeholder='{"id":"sample:1","role":"friend","content":"Hello","occurred_at":null}'></textarea>
+<button id="preview" class="secondary" data-i18n="preview"></button><p id="importPlan"></p><button id="commitImport" disabled data-i18n="commitImport"></button></details>
+<div class="divider"></div><button id="export" class="secondary" data-i18n="export"></button><button id="deleteAccount" class="danger" data-i18n="deleteAccount"></button>
+</section>
+</div>
+</main><footer data-i18n="footer"></footer>
+</body></html>
