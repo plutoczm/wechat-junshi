@@ -536,9 +536,6 @@ def test_wechat_source_key_is_identical_for_full_and_incremental_shapes():
     }
     incremental = dict(common)
     full = dict(common, server_id=123456789, type_code=1)
-    # type_code differs in representation, so use the common type representation in
-    # the full-export shape as the bridge itself does when type is already resolved.
-    full.pop("type_code")
     assert WeChatBridge._source_key("owner", "peer", incremental) == WeChatBridge._source_key(
         "owner", "peer", full
     )
