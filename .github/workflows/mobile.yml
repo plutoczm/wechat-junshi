@@ -50,6 +50,9 @@ jobs:
         shell: python
         run: |
           import importlib.metadata
+          import os
+          import sys
+          sys.path.insert(0, os.environ["GITHUB_WORKSPACE"])
           import wechatauto
           from mobile.wechat_bridge import WeChatBridge
           assert importlib.metadata.version("wechatauto-replica") == "1.2.3"
