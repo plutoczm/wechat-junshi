@@ -52,6 +52,7 @@ class AutomationService:
         self.debounce = max(1.0, float(debounce))
         self.stop_event = threading.Event()
         self.thread = None
+        self.trend_thread = None
         self.sync_jobs = {}
         self._sync_lock = threading.Lock()
         self._loop_error = ""
@@ -64,17 +65,32 @@ class AutomationService:
         self.stop_event.clear()
         self.thread = threading.Thread(target=self._run, name="junshi-wechat-bridge", daemon=True)
         self.thread.start()
+        if self.engine.trends and self.engine.trends.enabled:
+            self.trend_thread = threading.Thread(
+                target=self._run_trends, name="junshi-public-trends", daemon=True
+            )
+            self.trend_thread.start()
 
     def stop(self):
         self.stop_event.set()
         if self.thread:
             self.thread.join(timeout=8)
+        if self.trend_thread:
+            self.trend_thread.join(timeout=2)
 
     def status(self):
         return {
             "running": bool(self.thread and self.thread.is_alive()),
             "last_loop_error": self._loop_error,
         }
+
+    def _run_trends(self):
+        while not self.stop_event.is_set():
+            try:
+                self.engine.trends.refresh()
+            except Exception:
+                pass
+            self.stop_event.wait(max(60, self.engine.trends.ttl))
 
     def _run(self):
         while not self.stop_event.is_set():
