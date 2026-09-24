@@ -115,7 +115,7 @@ class AutomationService:
         if not status.get("connected"):
             return
         owner = status.get("owner_external_id")
-        for account in self.store.transport_accounts(enabled_only=True):
+        for account in self.store.transport_accounts(enabled_only=False):
             if account["owner_external_id"] != owner:
                 continue
             rows, raw, max_seq = self.bridge.read_new(
@@ -129,7 +129,7 @@ class AutomationService:
             for row, mid in zip(rows, result["message_ids"]):
                 if (
                     mid in new_set and row["role"] == "friend" and row["kind"] == "text"
-                    and account["mode"] in ("C", "B")
+                    and account["enabled"] and account["mode"] in ("C", "B")
                 ):
                     incoming.append(mid)
             if incoming:
