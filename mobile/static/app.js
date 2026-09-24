@@ -100,6 +100,7 @@ function renderInbox(items){
   const card=node("div",undefined,"inbox-card");
   card.append(node("small",(item.person_name||"人物")+" / "+(item.label||accountLabel(item.account_id))+" · "+item.status));
   for(const content of item.contents)card.append(node("p","对方："+content));
+  if(item.draft_status==="skipped")card.append(node("p","建议：本次不回复。","ok"));
   if(item.draft_messages?.length){
    const draft=node("div",undefined,"draft-preview");for(const m of item.draft_messages)draft.append(node("p","建议："+m));card.append(draft);
    if(item.explanation)card.append(node("small","提示："+item.explanation));
