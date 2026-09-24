@@ -1,9 +1,27 @@
 """Reply generation plus restart-safe WeChat polling/sending orchestration."""
 from datetime import datetime, timezone
+import re
 import threading
 import time
 
 from .store import Problem
+
+
+_NO_REPLY = {
+    "嗯", "嗯嗯", "哦", "哦哦", "噢", "啊", "呀", "诶", "好", "好的", "好吧",
+    "行", "可以", "收到", "知道了", "哈哈", "哈哈哈", "呵呵", "嘿嘿",
+    "ok", "OK", "Okay", "1", "6", "66", "666", "...", "。。。", "…",
+}
+_ONLY_SYMBOLS = re.compile(r"^[\s\W_]+$", re.UNICODE)
+
+
+def low_information(value):
+    value = (value or "").strip()
+    if not value:
+        return True
+    if len(value) > 12:
+        return False
+    return value in _NO_REPLY or bool(_ONLY_SYMBOLS.match(value))
 
 
 def _parse_iso(value):
@@ -29,7 +47,11 @@ class ReplyEngine:
             )
             query = "\n".join(r["content"] for r in snapshot.get("incoming", []))
             snapshot["trends"] = self.trends.search(query) if self.trends else []
-            messages, explanation = self.model.generate(snapshot)
+            incoming = snapshot.get("incoming", [])
+            if incoming and all(low_information(r["content"]) for r in incoming):
+                messages, explanation = [], "低信息量收尾消息，默认不主动追问。"
+            else:
+                messages, explanation = self.model.generate(snapshot)
             return self.store.save_draft(
                 snapshot, messages, explanation, source_message_ids=message_ids
             )
@@ -156,6 +178,9 @@ class AutomationService:
                     continue
                 raise
             self.store.attach_inbox_draft(mids, draft["id"], "drafted")
+            if not draft["messages"]:
+                self.store.skip_draft(draft["id"])
+                continue
             if account["mode"] == "B":
                 self.store.queue_outbox(draft["id"])
 
