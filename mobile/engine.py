@@ -203,6 +203,11 @@ class AutomationService:
         return dict(self.sync_jobs[account_id])
 
     def _sync_worker(self, account_id, account):
+        with self._sync_lock:
+            self.sync_jobs.setdefault(account_id, {
+                "state": "running", "imported": 0, "total": 0, "error": "",
+                "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            })
         try:
             rows, raw, max_seq = self.bridge.read_all(account["external_id"])
             with self._sync_lock:
