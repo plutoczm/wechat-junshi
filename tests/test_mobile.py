@@ -609,3 +609,26 @@ def test_public_trend_refresh_never_transmits_private_query():
     assert matches and matches[0]["title"] == "牛马的一天"
     assert all("PRIVATE_SECRET" not in url for url in seen)
     assert seen == ["https://public-hot.example/weibo/new"]
+
+
+
+def test_low_information_auto_message_skips_model_and_send(tmp_path):
+    class ExplodingModel:
+        key = "synthetic"
+        def generate(self, snapshot):
+            raise AssertionError("model must not be called for low-information close")
+
+    store, bridge, _, a, _ = linked_service(tmp_path)
+    service = AutomationService(
+        store, ReplyEngine(store, ExplodingModel(), FakeTrends()), bridge, debounce=1
+    )
+    service.debounce = 0
+    bridge.new_rows["peer-a"] = [transport_row("peer-a", 1, "嗯")]
+    service.poll_once()
+    service.process_inbox()
+    service.process_outbox()
+    assert bridge.sent == []
+    row = store.inbox_feed()[0]
+    assert row["status"] == "handled"
+    assert row["draft_status"] == "skipped"
+    assert row["outbox_id"] is None
