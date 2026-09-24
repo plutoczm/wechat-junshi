@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 
 from mobile.ai import DeepSeek
 from mobile.app import create_app
+from mobile.engine import AutomationService, ReplyEngine
 from mobile.store import Problem, Store
+from mobile.wechat_bridge import NullBridge
 
 TOKEN = "offline-test-token-" + "x" * 32
 
@@ -20,9 +22,85 @@ class FakeModel:
         return ["draft text"], "Review before sending."
 
 
+class FakeTrends:
+    enabled = False
+    ttl = 300
+
+    def search(self, query):
+        return []
+
+    def refresh(self):
+        return {"sources": 0, "items": 0}
+
+    def status(self):
+        return {"enabled": False, "provider": "test", "last_refresh": "", "last_error": ""}
+
+
+class FakeBridge:
+    enabled = True
+
+    def __init__(self):
+        self.owner_id = "owner-wxid"
+        self.version = "1.2.3-test"
+        self.contacts = {
+            "peer-a": "A main",
+            "peer-alt": "A alt",
+            "peer-b": "B main",
+        }
+        self.new_rows = {}
+        self.histories = {}
+        self.sent = []
+        self.send_state = "confirmed"
+
+    def status(self, force=False):
+        return {
+            "enabled": True, "installed": True, "package_version": self.version,
+            "connected": True, "owner_external_id": self.owner_id,
+            "can_read_history": True, "can_listen": True, "can_send": True,
+            "verified_client": "4.1.13.65", "error": "",
+        }
+
+    def reset(self):
+        pass
+
+    def search_contacts(self, query):
+        return [
+            {"external_id": peer, "display_name": name, "owner_external_id": self.owner_id,
+             "nick_name": name, "remark": ""}
+            for peer, name in self.contacts.items() if query.lower() in name.lower()
+        ]
+
+    def validate_contact(self, peer, expected_display=None):
+        if peer not in self.contacts:
+            raise Problem("contact missing", 404)
+        name = self.contacts[peer]
+        if expected_display is not None and expected_display != name:
+            raise Problem("display changed", 409)
+        return {"external_id": peer, "display_name": name, "owner_external_id": self.owner_id}
+
+    def read_new(self, peer, since_seq):
+        rows = [
+            item for item in self.new_rows.get(peer, [])
+            if int(item[1]) > int(since_seq or 0)
+        ]
+        return [x[0] for x in rows], [{} for _ in rows], max([x[1] for x in rows] or [since_seq])
+
+    def read_all(self, peer):
+        rows = self.histories.get(peer, [])
+        return [x[0] for x in rows], [{} for _ in rows], max([x[1] for x in rows] or [0])
+
+    def send_text(self, peer, display_name, content):
+        assert self.contacts[peer] == display_name
+        self.sent.append((peer, content))
+        return {"state": self.send_state, "detail": self.send_state}
+
+
 @pytest.fixture
 def setup(tmp_path):
-    app = create_app(tmp_path / "memory.sqlite3", TOKEN, "http://testserver", FakeModel())
+    app = create_app(
+        tmp_path / "memory.sqlite3", TOKEN, "http://testserver", FakeModel(),
+        bridge=NullBridge(tmp_path), trends=FakeTrends(),
+    )
     s = app.state.store
     pa, pb = s.add_person("A"), s.add_person("B")
     a, alt, b = s.add_account(pa, "A-main"), s.add_account(pa, "A-alt"), s.add_account(pb, "B-main")
@@ -252,7 +330,7 @@ def test_b_mode_and_capabilities_are_fail_closed(setup):
     s, c, _, _, a, _, _ = setup
     assert c.patch(f"/api/accounts/{a}", json={"cloud": True, "mode": "B"}).status_code == 409
     state = c.get("/api/state").json()
-    assert not state["transport"]["can_send"] and not state["transport"]["can_read_phone_history"]
+    assert not state["transport"]["can_send"] and not state["transport"]["can_read_history"]
     assert s.state()[0]["accounts"][0]["cloud"] == 0
 
 
@@ -268,7 +346,7 @@ def test_auth_origin_host_and_no_private_input_echo(setup):
     assert "localStorage" not in source and "innerHTML" not in source and TOKEN not in source
     bad = c.post("/api/persons", json={"name": "SENSITIVE", "extra": True})
     assert bad.status_code == 422 and "SENSITIVE" not in bad.text
-    assert c.post("/api/persons", content=b"x" * (2 * 1024 * 1024 + 1)).status_code == 413
+    assert c.post("/api/persons", content=b"x" * (4 * 1024 * 1024 + 1)).status_code == 413
 
 
 def test_consent_revocation_during_call_prevents_draft(setup):
@@ -286,3 +364,141 @@ def test_startup_requires_long_token_and_remote_https(tmp_path):
         create_app(tmp_path / "db", "short")
     with pytest.raises(ValueError):
         create_app(tmp_path / "db", TOKEN, "http://192.168.1.2:8787")
+
+
+
+def linked_service(tmp_path):
+    bridge = FakeBridge()
+    store = Store(tmp_path / "bridge.sqlite3")
+    person = store.add_person("same person")
+    a = store.add_account(person, "A-main")
+    alt = store.add_account(person, "A-alt")
+    store.link_transport(a, bridge.owner_id, "peer-a", "A main")
+    store.link_transport(alt, bridge.owner_id, "peer-alt", "A alt")
+    store.configure(a, True, "B")
+    store.configure(alt, True, "B")
+    engine = ReplyEngine(store, FakeModel(), FakeTrends())
+    service = AutomationService(store, engine, bridge, poll_interval=0.5, debounce=1)
+    service.debounce = 0
+    return store, bridge, service, a, alt
+
+
+def transport_row(peer, seq, content, role="friend"):
+    return ({
+        "id": f"wechat:test:{peer}:{seq}",
+        "role": role, "kind": "text", "content": content,
+        "occurred_at": f"2026-09-24T06:{seq:02d}:00+00:00",
+    }, seq)
+
+
+def test_linked_accounts_share_memory_but_never_send_target(tmp_path):
+    store, bridge, service, a, alt = linked_service(tmp_path)
+    bridge.new_rows["peer-alt"] = [transport_row("peer-alt", 1, "only to alt")]
+    service.poll_once()
+    assert store.export(a) == []
+    assert store.export(alt)[0]["content"] == "only to alt"
+    # Shared person retrieval sees the other account's evidence.
+    assert any(r["content"] == "only to alt" for r in store.context(a, "only to alt")["records"])
+    service.process_inbox()
+    service.process_outbox()
+    assert bridge.sent == [("peer-alt", "draft text")]
+    assert store.export(alt)[-1]["origin"] == "wechat_verified_send"
+    assert store.export(a) == []
+
+
+def test_transport_repeated_same_text_keeps_distinct_source_ids(tmp_path):
+    store, bridge, _, a, _ = linked_service(tmp_path)
+    rows = [transport_row("peer-a", 1, "晚安")[0], transport_row("peer-a", 2, "晚安")[0]]
+    result = store.ingest_transport(a, rows)
+    assert result["new"] == 2
+    assert [r["content"] for r in store.export(a)] == ["晚安", "晚安"]
+
+
+def test_unknown_send_is_never_automatically_retried(tmp_path):
+    store, bridge, service, a, _ = linked_service(tmp_path)
+    bridge.send_state = "unknown"
+    bridge.new_rows["peer-a"] = [transport_row("peer-a", 1, "hello")]
+    service.poll_once()
+    service.process_inbox()
+    service.process_outbox()
+    assert bridge.sent == [("peer-a", "draft text")]
+    assert store.inbox_feed()[0]["outbox_state"] == "unknown"
+    service.process_outbox()
+    assert bridge.sent == [("peer-a", "draft text")]
+
+
+def test_history_sync_imports_full_chat_and_advances_account_cursor(tmp_path):
+    store, bridge, service, a, alt = linked_service(tmp_path)
+    bridge.histories["peer-a"] = [
+        transport_row("peer-a", 10, "old one"),
+        transport_row("peer-a", 11, "old two"),
+    ]
+    service._sync_worker(a, store.transport_account(a))
+    assert [r["content"] for r in store.export(a)] == ["old one", "old two"]
+    assert store.transport_account(a)["cursor_seq"] == 11
+    assert store.transport_account(alt)["cursor_seq"] == 0
+    assert service.sync_status(a)["state"] == "done"
+
+
+def test_http_link_search_and_b_mode_are_explicit(tmp_path):
+    bridge = FakeBridge()
+    app = create_app(
+        tmp_path / "api.sqlite3", TOKEN, "http://testserver", FakeModel(),
+        bridge=bridge, trends=FakeTrends(),
+    )
+    s = app.state.store
+    p = s.add_person("A")
+    a = s.add_account(p, "slot")
+    with TestClient(app, headers={"Authorization": "Bearer " + TOKEN}) as client:
+        hits = client.get("/api/bridge/contacts?q=A").json()["contacts"]
+        assert hits[0]["external_id"] == "peer-a"
+        assert client.post(
+            f"/api/accounts/{a}/link-wechat",
+            json={"external_id": "peer-a", "display_name": "A main", "owner_external_id": bridge.owner_id},
+        ).status_code == 200
+        assert client.patch(
+            f"/api/accounts/{a}",
+            json={"cloud": True, "mode": "B", "enabled": True},
+        ).status_code == 200
+        row = s.transport_account(a)
+        assert row["external_id"] == "peer-a" and row["mode"] == "B"
+        assert client.delete(f"/api/accounts/{a}/link-wechat").status_code == 200
+        assert s.state()[0]["accounts"][0]["external_id"] is None
+
+
+def test_b_mode_refuses_stale_or_ambiguous_contact(tmp_path):
+    bridge = FakeBridge()
+    app = create_app(
+        tmp_path / "stale.sqlite3", TOKEN, "http://testserver", FakeModel(),
+        bridge=bridge, trends=FakeTrends(),
+    )
+    s = app.state.store
+    p = s.add_person("A")
+    a = s.add_account(p, "slot")
+    s.link_transport(a, bridge.owner_id, "peer-a", "A main")
+    bridge.contacts["peer-a"] = "renamed"
+    with TestClient(app, headers={"Authorization": "Bearer " + TOKEN}) as client:
+        response = client.patch(
+            f"/api/accounts/{a}",
+            json={"cloud": True, "mode": "B", "enabled": True},
+        )
+        assert response.status_code == 409
+
+
+def test_trend_context_is_optional_and_private_query_not_a_tool_call(setup):
+    s, _, _, _, a, _, _ = setup
+    mid = put(s, a, "一个完全私密的词")
+    data = snap(s, a, mid)
+    data["incoming"] = [data["current"]]
+    data["trends"] = [{"source": "weibo", "title": "公开热词", "updated_at": "now"}]
+    captured = {}
+    def respond(request):
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, json={
+            "choices": [{"finish_reason": "stop", "message": {
+                "content": '{"messages":["ok"],"explanation":""}'
+            }}]
+        })
+    DeepSeek("fake", httpx.MockTransport(respond)).generate(data)
+    assert "PUBLIC_TRENDS" in captured["messages"][1]["content"]
+    assert "tools" not in captured
