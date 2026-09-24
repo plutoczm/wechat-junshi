@@ -170,6 +170,22 @@ class AutomationService:
             if self.stop_event.is_set():
                 self.store.finish_outbox(item["id"], "failed", "service stopped before send")
                 return
+            try:
+                live = self.store.transport_account(item["account_id"])
+            except Problem:
+                return
+            if (
+                live["revision"] != item["revision"] or not live["enabled"]
+                or live["mode"] != "B"
+                or live["external_id"] != transport["external_id"]
+            ):
+                try:
+                    self.store.finish_outbox(
+                        item["id"], "failed", "B mode or target changed before remaining send"
+                    )
+                except Problem:
+                    pass
+                return
             result = self.bridge.send_text(
                 transport["external_id"], transport["display_name"], payload[index]
             )
