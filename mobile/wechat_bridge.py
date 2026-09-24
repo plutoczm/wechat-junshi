@@ -185,6 +185,11 @@ class WeChatBridge:
         content = m.get("content")
         if not isinstance(content, str) or not content.strip():
             content = f"[{mtype}]"
+        content = "".join(
+            ch if ord(ch) >= 32 or ch in "\n\r\t" else " " for ch in content
+        )
+        if len(content) > 20000:
+            content = content[:19970] + "\n[内容过长，已截断]"
         return {
             "id": self._source_key(owner, peer, m),
             "role": role,
