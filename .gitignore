@@ -57,3 +57,6 @@ desktop.ini
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Local read-only upstream skill clone
+.vendor/
