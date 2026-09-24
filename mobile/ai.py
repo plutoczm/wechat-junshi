@@ -33,12 +33,33 @@ An empty messages array means no reply is appropriate. No analysis in messages.
 """
 
 
+def find_skill_root():
+    env = os.environ.get("GOUTOUJUNSHI_SKILL_DIR")
+    here = Path(__file__).resolve().parent.parent
+    home = Path.home()
+    candidates = [
+        Path(env).expanduser() if env else None,
+        here / ".vendor" / "goutoujunshi",
+        here.parent / "goutoujunshi",
+        home / ".codex" / "skills" / "goutoujunshi",
+        home / ".agents" / "skills" / "goutoujunshi",
+    ]
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        try:
+            if (candidate / "SKILL.md").is_file():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
 def knowledge(query):
     """Read the installed upstream skill as analysis reference, never as executable tools."""
-    root = os.environ.get("GOUTOUJUNSHI_SKILL_DIR")
-    if not root:
+    base = find_skill_root()
+    if base is None:
         return ""
-    base = Path(root)
     result = []
     core = base / "SKILL.md"
     try:
