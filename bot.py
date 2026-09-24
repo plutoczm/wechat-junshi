@@ -35,6 +35,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -466,6 +467,8 @@ class JunshiBot:
         self.wx = None
         # 档案 -> 已见过的消息指纹（首次见到只建立基线，不回复历史）
         self.seen: dict[str, set[str]] = {}
+        # 发送失败的重试计数：档案 -> 次数
+        self.retry_count: dict[str, int] = {}
         # 连发合并缓冲：档案 -> [(friend, content, ts)]
         self.pending: dict[str, list[tuple[str, str, float]]] = {}
         self._lock = threading.Lock()
@@ -702,12 +705,36 @@ class JunshiBot:
                 if not chunks:
                     continue
 
-                self._send_chunks(friend, chunks)
-                self.last_reply_at[profile] = time.time()
+                sent = self._send_chunks(friend, chunks)
+                if sent == 0:
+                    # 一条都没发出去（通常是窗口状态问题）。不要静默丢掉，
+                    # 放回队列稍后重试，否则好友永远等不到回复。
+                    self._requeue(friend, profile, batch)
+                else:
+                    self.last_reply_at[profile] = time.time()
             except Exception as exc:
                 log.exception("[%s] 生成/发送回复失败：%s", friend, exc)
+                self._requeue(friend, profile, batch)
             finally:
                 self.reply_queue.task_done()
+
+    def _requeue(self, friend: str, profile: str, batch: list[str], max_retries: int = 2) -> None:
+        """发送失败时把消息放回队列重试，超过次数就放弃并明确记日志。"""
+        tries = self.retry_count.get(profile, 0)
+        if tries >= max_retries:
+            log.error(
+                "[%s] 已重试 %d 次仍未发出，放弃这批消息（内容：%s）",
+                friend,
+                tries,
+                " ｜ ".join(m[:40] for m in batch),
+            )
+            self.retry_count.pop(profile, None)
+            return
+
+        self.retry_count[profile] = tries + 1
+        log.warning("[%s] 发送未成功，稍后重试（第 %d 次）", friend, tries + 1)
+        time.sleep(3)
+        self.reply_queue.put((friend, profile, batch))
 
     def _send_chunks(self, friend: str, chunks: list[str]) -> int:
         """按顺序发送多条消息，返回成功条数。
@@ -728,19 +755,42 @@ class JunshiBot:
                 time.sleep(random.uniform(0.8, 2.0))
         return sent
 
-    def _send(self, friend: str, text: str) -> bool:
-        """发送一条消息。发之前再校验一次目标会话，避免发错人。"""
-        try:
-            info = self.wx.ChatInfo()
-            if info.get("chat_name") != friend:
-                log.error(
-                    "[%s] 发送前校验失败（当前窗口是 %r），已放弃发送",
+    def _ensure_target(self, friend: str, attempts: int = 3) -> bool:
+        """确保当前窗口就是目标好友；不是就切过去，切换后再次校验。
+
+        为什么需要：wxauto4 的 ChatInfo 在窗口状态不稳定时会返回 chat_name=None；
+        用户手动切到别的会话也会导致目标不对。直接放弃会丢回复，
+        所以这里主动切回去重试几次。仍然不行才放弃（绝不能发错人）。
+        """
+        last_seen: Any = None
+        for attempt in range(1, attempts + 1):
+            try:
+                info = self.wx.ChatInfo()
+                if info.get("chat_name") == friend:
+                    return True
+                last_seen = info.get("chat_name")
+            except Exception as exc:
+                last_seen = f"<读取失败 {type(exc).__name__}>"
+
+            if attempt < attempts:
+                log.warning(
+                    "[%s] 当前窗口是 %r，正在切回目标会话（第 %d 次）",
                     friend,
-                    info.get("chat_name"),
+                    last_seen,
+                    attempt,
                 )
-                return False
-        except Exception as exc:
-            log.error("[%s] 发送前校验异常，已放弃发送：%s", friend, exc)
+                try:
+                    self.wx.ChatWith(friend)
+                except Exception as exc:
+                    log.warning("[%s] 切回失败：%s", friend, exc)
+                time.sleep(1.2)
+
+        log.error("[%s] 多次尝试仍无法定位目标会话（最后是 %r），放弃发送", friend, last_seen)
+        return False
+
+    def _send(self, friend: str, text: str) -> bool:
+        """发送一条消息。发之前确保当前窗口是目标好友，避免发错人。"""
+        if not self._ensure_target(friend):
             return False
 
         try:
