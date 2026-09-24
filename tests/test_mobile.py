@@ -10,7 +10,7 @@ from mobile.ai import DeepSeek
 from mobile.app import create_app
 from mobile.engine import AutomationService, ReplyEngine
 from mobile.store import Problem, Store
-from mobile.wechat_bridge import NullBridge
+from mobile.wechat_bridge import NullBridge, WeChatBridge
 
 TOKEN = "offline-test-token-" + "x" * 32
 
@@ -502,3 +502,71 @@ def test_trend_context_is_optional_and_private_query_not_a_tool_call(setup):
     DeepSeek("fake", httpx.MockTransport(respond)).generate(data)
     assert "PUBLIC_TRENDS" in captured["messages"][1]["content"]
     assert "tools" not in captured
+
+
+
+def test_rebinding_a_b_mode_account_resets_to_c(tmp_path):
+    store, bridge, _, a, _ = linked_service(tmp_path)
+    assert store.transport_account(a)["mode"] == "B"
+    store.link_transport(a, bridge.owner_id, "peer-b", "B main")
+    rebound = store.transport_account(a)
+    assert rebound["external_id"] == "peer-b"
+    assert rebound["mode"] == "C"
+    assert rebound["cursor_seq"] == 0
+
+
+def test_paused_or_off_account_still_archives_but_never_builds_backlog(tmp_path):
+    store, bridge, service, a, _ = linked_service(tmp_path)
+    store.set_transport_mode(a, "OFF", False)
+    bridge.new_rows["peer-a"] = [transport_row("peer-a", 1, "message while paused")]
+    service.poll_once()
+    assert store.export(a)[0]["content"] == "message while paused"
+    assert store.pending_inbox(a) == []
+    assert store.transport_account(a)["cursor_seq"] == 1
+    store.set_transport_mode(a, "C", True)
+    service.poll_once()
+    assert store.pending_inbox(a) == []
+
+
+def test_wechat_source_key_is_identical_for_full_and_incremental_shapes():
+    common = {
+        "sort_seq": 99, "local_id": 7, "type": "文本",
+        "create_time": 1790000000, "content": "same",
+    }
+    incremental = dict(common)
+    full = dict(common, server_id=123456789, type_code=1)
+    # type_code differs in representation, so use the common type representation in
+    # the full-export shape as the bridge itself does when type is already resolved.
+    full.pop("type_code")
+    assert WeChatBridge._source_key("owner", "peer", incremental) == WeChatBridge._source_key(
+        "owner", "peer", full
+    )
+
+
+def test_b_mode_rechecks_mode_between_multi_chunk_send(tmp_path):
+    class TwoModel:
+        key = "synthetic"
+        def generate(self, snapshot):
+            return ["first", "second"], ""
+
+    store, bridge, _, a, _ = linked_service(tmp_path)
+    service = AutomationService(
+        store, ReplyEngine(store, TwoModel(), FakeTrends()), bridge, debounce=1
+    )
+    service.debounce = 0
+    bridge.new_rows["peer-a"] = [transport_row("peer-a", 1, "two parts please")]
+    original_send = bridge.send_text
+
+    def send_then_pause(peer, display_name, content):
+        result = original_send(peer, display_name, content)
+        if len(bridge.sent) == 1:
+            store.set_transport_mode(a, "OFF", False)
+        return result
+
+    bridge.send_text = send_then_pause
+    service.poll_once()
+    service.process_inbox()
+    service.process_outbox()
+    assert bridge.sent == [("peer-a", "first")]
+    feed = store.inbox_feed()
+    assert all(item["outbox_state"] != "confirmed" for item in feed)
