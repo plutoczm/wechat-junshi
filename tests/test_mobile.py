@@ -10,6 +10,7 @@ from mobile.ai import DeepSeek
 from mobile.app import create_app
 from mobile.engine import AutomationService, ReplyEngine
 from mobile.store import Problem, Store
+from mobile.trends import Trends
 from mobile.wechat_bridge import NullBridge, WeChatBridge
 
 TOKEN = "offline-test-token-" + "x" * 32
@@ -570,3 +571,41 @@ def test_b_mode_rechecks_mode_between_multi_chunk_send(tmp_path):
     assert bridge.sent == [("peer-a", "first")]
     feed = store.inbox_feed()
     assert all(item["outbox_state"] != "confirmed" for item in feed)
+
+
+
+def test_automatic_c_mode_generates_draft_without_sending(tmp_path):
+    store, bridge, service, a, _ = linked_service(tmp_path)
+    store.set_transport_mode(a, "C", True)
+    bridge.new_rows["peer-a"] = [transport_row("peer-a", 1, "C mode message")]
+    service.poll_once()
+    service.process_inbox()
+    assert bridge.sent == []
+    feed = store.inbox_feed()
+    row = next(x for x in feed if x["account_id"] == a)
+    assert row["status"] == "drafted"
+    assert row["draft_messages"] == ["draft text"]
+    assert row["outbox_id"] is None
+
+
+def test_public_trend_refresh_never_transmits_private_query():
+    seen = []
+    def responder(request):
+        seen.append(str(request.url))
+        assert request.method == "GET"
+        assert request.content in (b"", None)
+        return httpx.Response(200, json={
+            "updateTime": "2026-09-24T07:00:00Z",
+            "data": [{"title": "牛马的一天"}],
+        })
+    trends = Trends(
+        base="https://public-hot.example/",
+        sources=("weibo",),
+        ttl=300,
+        transport=httpx.MockTransport(responder),
+    )
+    trends.refresh()
+    matches = trends.search("我今天真是牛马 PRIVATE_SECRET")
+    assert matches and matches[0]["title"] == "牛马的一天"
+    assert all("PRIVATE_SECRET" not in url for url in seen)
+    assert seen == ["https://public-hot.example/weibo/new"]
