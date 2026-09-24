@@ -170,7 +170,7 @@ class WeChatBridge:
         ).hexdigest()[:20]
         return (
             f"wechat:{owner}:{peer}:seq:{m.get('sort_seq',0)}:"
-            f"local:{m.get('local_id',0)}:type:{m.get('type_code',m.get('type',''))}:"
+            f"local:{m.get('local_id',0)}:type:{m.get('type','')}:"
             f"time:{m.get('create_time',0)}:{digest}"
         )[:240]
 
