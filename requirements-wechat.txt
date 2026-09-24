@@ -1,0 +1,4 @@
+# Windows 10/11 + WeChat 4.1.13.65 bridge.
+# All dependencies are free/open-source; DeepSeek API usage is separate and metered.
+-r requirements-mobile.txt
+wechatauto-replica[guia]==1.2.3
