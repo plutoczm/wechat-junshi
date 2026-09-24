@@ -12,6 +12,7 @@ from pathlib import Path
 import platform
 import tempfile
 import threading
+import time
 
 from .store import Problem
 
@@ -60,6 +61,8 @@ class WeChatBridge:
         self._last_error = ""
         self._version = ""
         self._owner = ""
+        self._status_cache = None
+        self._status_cache_at = 0.0
         if self.enabled:
             os.environ.setdefault("WECHATAUTO_RHYTHM", "calm")
             try:
@@ -96,8 +99,13 @@ class WeChatBridge:
             self._db = None
             self._gui = None
             self._owner = ""
+            self._status_cache = None
+            self._status_cache_at = 0.0
 
-    def status(self):
+    def status(self, force=False):
+        now_mono = time.monotonic()
+        if not force and self._status_cache and now_mono - self._status_cache_at < 10:
+            return dict(self._status_cache)
         result = {
             "enabled": self.enabled,
             "installed": self.installed,
@@ -111,6 +119,7 @@ class WeChatBridge:
             "error": self._last_error,
         }
         if not self.enabled or not self.installed:
+            self._status_cache, self._status_cache_at = dict(result), now_mono
             return result
         try:
             db = self._connect()
@@ -124,6 +133,7 @@ class WeChatBridge:
             })
         except Problem:
             pass
+        self._status_cache, self._status_cache_at = dict(result), now_mono
         return result
 
     def owner(self):
