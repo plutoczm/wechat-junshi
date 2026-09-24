@@ -58,18 +58,21 @@ class AutomationService:
         self._loop_error = ""
 
     def start(self):
-        if self.thread and self.thread.is_alive():
-            return
-        if not self.bridge.enabled:
+        if (self.thread and self.thread.is_alive()) or (
+            self.trend_thread and self.trend_thread.is_alive()
+        ):
             return
         self.stop_event.clear()
-        self.thread = threading.Thread(target=self._run, name="junshi-wechat-bridge", daemon=True)
-        self.thread.start()
         if self.engine.trends and self.engine.trends.enabled:
             self.trend_thread = threading.Thread(
                 target=self._run_trends, name="junshi-public-trends", daemon=True
             )
             self.trend_thread.start()
+        if self.bridge.enabled:
+            self.thread = threading.Thread(
+                target=self._run, name="junshi-wechat-bridge", daemon=True
+            )
+            self.thread.start()
 
     def stop(self):
         self.stop_event.set()
