@@ -162,10 +162,12 @@ class WeChatBridge:
 
     @staticmethod
     def _source_key(owner, peer, m):
-        server = m.get("server_id")
-        if server not in (None, "", 0, "0"):
-            return f"wechat:{owner}:{peer}:server:{server}"[:240]
-        digest = hashlib.sha256(str(m.get("content") or "").encode("utf-8", "replace")).hexdigest()[:16]
+        # Use fields present in BOTH export_history and get_new_messages. Using
+        # server_id only for full export would duplicate the same message when the
+        # incremental reader later sees it without server_id.
+        digest = hashlib.sha256(
+            str(m.get("content") or "").encode("utf-8", "replace")
+        ).hexdigest()[:20]
         return (
             f"wechat:{owner}:{peer}:seq:{m.get('sort_seq',0)}:"
             f"local:{m.get('local_id',0)}:type:{m.get('type_code',m.get('type',''))}:"
