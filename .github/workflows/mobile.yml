@@ -1,0 +1,62 @@
+name: Mobile workbench
+on:
+  push:
+    branches: [main, 'feat/mobile-*']
+  pull_request:
+permissions:
+  contents: read
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -r requirements-mobile.txt pytest
+      - run: python -m pytest -q tests/test_mobile.py
+      - run: python -m compileall -q mobile
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check mobile/static/app.js
+
+  browser-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-mobile.txt playwright
+      - run: python -m playwright install --with-deps chromium
+      - run: python tests/browser_smoke.py
+
+  windows-bridge-import:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned free/open-source WeChat bridge
+        run: python -m pip install -r requirements-wechat.txt
+      - name: Import bridge without touching a real WeChat account
+        shell: python
+        run: |
+          import importlib.metadata
+          import os
+          import sys
+          sys.path.insert(0, os.environ["GITHUB_WORKSPACE"])
+          import wechatauto
+          from mobile.wechat_bridge import WeChatBridge
+          assert importlib.metadata.version("wechatauto-replica") == "1.2.3"
+          bridge = WeChatBridge(".ci-private-data", enabled=False)
+          assert bridge.provider == "wechat"
+          print("Windows bridge import OK; no WeChat session was accessed.")
+      - run: python -m compileall -q mobile

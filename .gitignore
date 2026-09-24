@@ -46,3 +46,17 @@ wxauto_logs/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Mobile workbench: keep runtime data and credentials outside the checkout.
+.venv-mobile/
+.wechat-junshi/
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Local read-only upstream skill clone
+.vendor/
