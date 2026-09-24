@@ -221,6 +221,19 @@ class WeChatBridge:
             except OSError:
                 pass
 
+    def validate_contact(self, peer, expected_display=None):
+        db = self._connect()
+        current = str(db.get_nickname(peer) or "")
+        if not current or current == peer:
+            raise Problem("WeChat contact was not found in the local contact database", 404)
+        if expected_display is not None and current != expected_display:
+            raise Problem("WeChat contact display name changed; refresh search results", 409)
+        return {
+            "external_id": peer,
+            "display_name": current,
+            "owner_external_id": self._owner,
+        }
+
     def _safe_send_name(self, peer, expected_display):
         db = self._connect()
         current = str(db.get_nickname(peer) or "")
