@@ -99,12 +99,14 @@ A 的历史可以帮助理解 B 的上下文，但 B 发来的消息只会回复
 
 ```powershell
 git fetch origin
-git switch feat/mobile-memory-workbench
+git switch main
 
 py -3.12 -m venv .venv-mobile
 .\.venv-mobile\Scripts\Activate.ps1
 python -m pip install -r requirements-wechat.txt
 ```
+
+也可以直接双击 `4-install-mobile-workbench.bat`。安装脚本会在 `.vendor/goutoujunshi` 准备一份上游 skill 的只读本地副本；如果你已有自己的副本，设置 `GOUTOUJUNSHI_SKILL_DIR` 会优先使用你的路径。
 
 `requirements-wechat.txt` 固定使用：
 
@@ -137,6 +139,8 @@ $env:JUNSHI_PUBLIC_ORIGIN = "http://127.0.0.1:8787"
 ```powershell
 python -m mobile
 ```
+
+或双击 `5-start-mobile-workbench.bat`。只读微信桥接验收可双击 `6-check-wechat-bridge.bat`。
 
 默认会启动微信监听、历史桥接和公开热榜后台刷新。只想管理记忆、不碰微信时：
 
