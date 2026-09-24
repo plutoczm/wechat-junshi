@@ -719,6 +719,24 @@ class Store:
                 out.append(item)
             return out
 
+    def skip_draft(self, draft_id):
+        with self.db() as db:
+            row = db.execute("SELECT * FROM drafts WHERE id=?", (draft_id,)).fetchone()
+            if not row:
+                raise Problem("Draft not found", 404)
+            if row["status"] != "pending":
+                raise Problem("Draft is no longer current", 409)
+            db.execute(
+                "UPDATE drafts SET status='skipped',messages='[]',explanation='',evidence='[]' WHERE id=?",
+                (draft_id,),
+            )
+            db.execute("DELETE FROM draft_sources WHERE draft_id=?", (draft_id,))
+            db.execute(
+                "UPDATE inbox SET status='handled',updated_at=? WHERE draft_id=?",
+                (now(), draft_id),
+            )
+            return {"status": "skipped"}
+
     def queue_outbox(self, draft_id):
         with self.db() as db:
             d = db.execute("SELECT * FROM drafts WHERE id=?", (draft_id,)).fetchone()
