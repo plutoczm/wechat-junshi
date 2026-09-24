@@ -222,7 +222,7 @@ def create_app(
             if binding["owner_external_id"] != status.get("owner_external_id"):
                 raise Problem("This contact belongs to a different logged-in WeChat account", 409)
             bridge_obj.validate_contact(binding["external_id"], binding["display_name"])
-        store.configure(account_id, body.cloud, body.mode)
+        store.configure(account_id, body.cloud, None)
         if binding:
             store.set_transport_mode(account_id, body.mode, body.enabled)
         return {"mode": body.mode, "cloud": body.cloud, "enabled": body.enabled}
