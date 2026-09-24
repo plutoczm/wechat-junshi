@@ -263,7 +263,7 @@ class Store:
                        ON CONFLICT(account_id) DO UPDATE SET provider='wechat',
                        owner_external_id=excluded.owner_external_id,
                        external_id=excluded.external_id,display_name=excluded.display_name,
-                       cursor_seq=0,last_sync_at=NULL""",
+                       mode='C',enabled=1,cursor_seq=0,last_sync_at=NULL""",
                     (account_id, "wechat", owner_external_id, external_id, display_name),
                 )
             except sqlite3.IntegrityError as exc:
@@ -287,6 +287,12 @@ class Store:
                 (mode, int(enabled), account_id),
             )
             self.touch(db, [a["person_id"]])
+            if mode == "OFF" or not enabled:
+                db.execute(
+                    "UPDATE inbox SET status='dismissed',draft_id=NULL,updated_at=? "
+                    "WHERE account_id=? AND status='new'",
+                    (now(), account_id),
+                )
 
     def transport_account(self, account_id):
         with self.db() as db:
