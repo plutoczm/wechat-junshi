@@ -64,6 +64,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Validate Task Scheduler command contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $action = Get-Command New-ScheduledTaskAction -ErrorAction Stop
+          $settings = Get-Command New-ScheduledTaskSettingsSet -ErrorAction Stop
+          $principal = Get-Command New-ScheduledTaskPrincipal -ErrorAction Stop
+          foreach ($name in @('WorkingDirectory')) {
+            if (-not $action.Parameters.ContainsKey($name)) { throw "New-ScheduledTaskAction missing $name" }
+          }
+          foreach ($name in @('RestartCount','RestartInterval','MultipleInstances','ExecutionTimeLimit')) {
+            if (-not $settings.Parameters.ContainsKey($name)) { throw "New-ScheduledTaskSettingsSet missing $name" }
+          }
+          foreach ($name in @('LogonType','RunLevel')) {
+            if (-not $principal.Parameters.ContainsKey($name)) { throw "New-ScheduledTaskPrincipal missing $name" }
+          }
       - name: Install pinned free/open-source WeChat bridge
         run: python -m pip install -r requirements-wechat.txt
       - name: Import bridge without touching a real WeChat account
