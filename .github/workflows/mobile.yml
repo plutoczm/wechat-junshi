@@ -21,6 +21,26 @@ jobs:
       - run: python -m pip install -r requirements-mobile.txt pytest
       - run: python -m pytest -q tests/test_mobile.py
       - run: python -m compileall -q mobile
+      - name: Parse PowerShell deployment helpers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(
+            'scripts/install_mobile_windows.ps1',
+            'scripts/register_autostart.ps1',
+            'scripts/unregister_autostart.ps1'
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file), [ref]$tokens, [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              exit 1
+            }
+          }
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -44,6 +64,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Validate Task Scheduler command contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $action = Get-Command New-ScheduledTaskAction -ErrorAction Stop
+          $settings = Get-Command New-ScheduledTaskSettingsSet -ErrorAction Stop
+          $principal = Get-Command New-ScheduledTaskPrincipal -ErrorAction Stop
+          foreach ($name in @('WorkingDirectory')) {
+            if (-not $action.Parameters.ContainsKey($name)) { throw "New-ScheduledTaskAction missing $name" }
+          }
+          foreach ($name in @('RestartCount','RestartInterval','MultipleInstances','ExecutionTimeLimit')) {
+            if (-not $settings.Parameters.ContainsKey($name)) { throw "New-ScheduledTaskSettingsSet missing $name" }
+          }
+          foreach ($name in @('LogonType','RunLevel')) {
+            if (-not $principal.Parameters.ContainsKey($name)) { throw "New-ScheduledTaskPrincipal missing $name" }
+          }
       - name: Install pinned free/open-source WeChat bridge
         run: python -m pip install -r requirements-wechat.txt
       - name: Import bridge without touching a real WeChat account
