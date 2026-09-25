@@ -73,6 +73,8 @@ python -m mobile.selfcheck --contact "好友备注"
 
 打开 `http://127.0.0.1:8787`。Android 远程访问必须配置 HTTPS，详见 [MOBILE.md](MOBILE.md)。
 
+需要长期常驻时，在把 `JUNSHI_ADMIN_TOKEN`、`DEEPSEEK_API_KEY` 等变量持久化为当前 Windows 用户环境变量后，双击 `7-install-autostart.bat` 注册登录自启动；`8-remove-autostart.bat` 可撤销。B 模式依赖交互式 Windows 登录会话和微信 GUI，不能作为无桌面的系统服务运行。
+
 ## 手机历史
 
 程序读取 Windows 本地微信数据库。因此，如果完整旧历史目前只在 Android，请先用微信客户端自带的聊天记录迁移/备份功能将所需会话迁移/恢复到这台 Windows 微信，再在手机控制台绑定相应好友并点“同步完整电脑历史”。
