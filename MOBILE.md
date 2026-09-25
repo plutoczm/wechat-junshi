@@ -142,6 +142,28 @@ python -m mobile
 
 或双击 `5-start-mobile-workbench.bat`。只读微信桥接验收可双击 `6-check-wechat-bridge.bat`。
 
+### 常驻运行与自动恢复
+
+B 模式依赖微信桌面 GUI，因此不能把它当成无桌面的 Windows Service。推荐使用**当前 Windows 用户的交互式登录会话**常驻，并注册一个“登录即启动”的计划任务。
+
+先把必要变量持久化到当前 Windows 用户环境，避免把密钥写进 bat/任务参数：
+
+```powershell
+[Environment]::SetEnvironmentVariable("JUNSHI_ADMIN_TOKEN", "你的高熵管理令牌", "User")
+[Environment]::SetEnvironmentVariable("DEEPSEEK_API_KEY", "你的 DeepSeek 密钥", "User")
+[Environment]::SetEnvironmentVariable("JUNSHI_PUBLIC_ORIGIN", "https://你的私有域名", "User")
+```
+
+然后双击 `7-install-autostart.bat`。它会注册 `wechat-junshi-mobile` 计划任务：
+
+- 仅在当前用户登录后启动；
+- 使用 `.venv-mobile\Scripts\python.exe -m mobile`；
+- 程序异常退出后 1 分钟重启；
+- 不把管理令牌或 DeepSeek 密钥写入任务命令行；
+- 不创建高权限服务，也不会在无人登录桌面的情况下尝试 B 模式。
+
+停用常驻任务时双击 `8-remove-autostart.bat`。注销 Windows 会结束 GUI 会话，因此 **B 自动发送要求 Windows 保持登录、微信保持登录可用**。如果你只需要 C 模式，后端可放到普通服务器运行，但该服务器不会直接控制这台 Windows 微信。
+
 默认会启动微信监听、历史桥接和公开热榜后台刷新。只想管理记忆、不碰微信时：
 
 ```powershell
